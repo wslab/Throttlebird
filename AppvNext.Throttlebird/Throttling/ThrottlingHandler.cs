@@ -64,7 +64,9 @@ namespace AppvNext.Throttlebird.Throttling
             Task<HttpResponseMessage> response = null;
             if (entry.Requests > maxRequests)
             {
-                response = CreateResponse(request, HttpStatusCode.ServiceUnavailable, _message);
+
+                long retryAfter = (long)(entry.PeriodStart.Add(_period).Subtract(DateTime.UtcNow).TotalMilliseconds);
+                response = CreateResponse(request, (HttpStatusCode)429, _message, retryAfter);
             }
             else
             {
@@ -87,12 +89,20 @@ namespace AppvNext.Throttlebird.Throttling
             });
         }
 
-        protected Task<HttpResponseMessage> CreateResponse(HttpRequestMessage request, HttpStatusCode statusCode, string message)
+        protected Task<HttpResponseMessage> CreateResponse(HttpRequestMessage request, HttpStatusCode statusCode, string message, long retryAfter = -1)
         {
             var tsc = new TaskCompletionSource<HttpResponseMessage>();
             var response = request.CreateResponse(statusCode);
-            response.ReasonPhrase = message;
             response.Content = new StringContent(message);
+            if (retryAfter != -1)
+            {
+                response.Headers.Add("Retry-After", "" + (int)(retryAfter / 1000));
+                response.ReasonPhrase = message + " after " + retryAfter + " ms";
+            }
+            else
+            {
+                response.ReasonPhrase = message;
+            }
             tsc.SetResult(response);
             return tsc.Task;
         }
